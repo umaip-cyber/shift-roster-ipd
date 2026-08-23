@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>จัดตารางเวร — Shift Roster Planner</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600;700&display=swap');
+
+  :root{
+    --bg:#F7FAFF;
+    --panel:#FFFFFF;
+    --line:#E1E8F5;
+    --text:#1C2541;
+    --muted:#6B7A99;
+    --d:#FFB020;
+    --n:#6C5CE7;
+    --cha:#2DBE8F;
+    --bor:#3E92CC;
+    --duk:#C2447A;
+    --off:#E4E9F5;
+    --accent:#FF6B5B;
+    --good:#12B76A;
+    --bad:#E4572E;
+    --radius:12px;
+  }
+  @media (prefers-reduced-motion: reduce){ *{ animation-duration:.001ms !important; transition-duration:.001ms !important; } }
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; min-height:100vh; padding:28px 14px 90px;
+    background:
+      radial-gradient(800px 360px at 15% -10%, rgba(255,176,32,0.10), transparent),
+      radial-gradient(800px 360px at 90% 0%, rgba(108,92,231,0.08), transparent),
+      var(--bg);
+    color:var(--text); font-family:'Inter',sans-serif;
+  }
+  .wrap{ max-width:1100px; margin:0 auto; }
+
+  header{ margin-bottom:20px; }
+  .eyebrow{ font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); margin:0 0 4px; }
+  h1{ font-family:'Poppins',sans-serif; font-weight:800; font-size:30px; margin:0; color:var(--text); }
+  .subtitle{ color:var(--muted); font-size:14px; margin:6px 0 0; }
+
+  .panel{ background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:18px; margin-bottom:16px; box-shadow:0 2px 8px rgba(28,37,65,0.05); }
+  .panel-title{ font-family:'Poppins',sans-serif; font-weight:700; font-size:15px; color:var(--text); margin:0 0 12px; display:flex; align-items:center; gap:8px; }
+  .panel-hint{ font-size:12px; color:var(--muted); margin:8px 0 0; line-height:1.6; }
+
+  label{ font-size:12px; color:var(--muted); display:block; margin-bottom:6px; font-weight:500; }
+  input[type=text], input[type=number], input[type=date], textarea, select{
+    width:100%; background:#FBFDFF; border:1px solid var(--line); color:var(--text);
+    border-radius:8px; padding:9px 10px; font-family:'Inter',sans-serif; font-size:14px;
+  }
+  input:disabled, select:disabled{ opacity:.4; background:#F0F3F8; }
+  input:focus-visible, textarea:focus-visible, select:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; border-color:var(--accent); }
+
+  .date-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  @media (max-width:520px){ .date-grid{ grid-template-columns:1fr; } }
+
+  .staff-row{ display:grid; grid-template-columns:1.4fr .7fr 1fr auto; gap:8px; align-items:end; margin-bottom:8px; }
+  @media (max-width:640px){ .staff-row{ grid-template-columns:1fr 1fr; } }
+  .staff-row .remove-staff{ background:none; border:1px solid var(--line); color:var(--bad); width:36px; height:36px; border-radius:8px; cursor:pointer; }
+
+  .shift-req-grid{ display:grid; grid-template-columns:repeat(5,1fr); gap:10px; }
+  @media (max-width:640px){ .shift-req-grid{ grid-template-columns:repeat(2,1fr); } }
+  .shift-req-item{ text-align:center; }
+  .shift-req-item label{ display:flex; align-items:center; justify-content:center; gap:5px; font-weight:600; }
+  .shift-dot{ width:10px; height:10px; border-radius:50%; display:inline-block; }
+
+  .coverage-check{ display:flex; gap:16px; flex-wrap:wrap; margin-top:12px; }
+  .coverage-badge{ font-size:13px; font-family:'IBM Plex Mono',monospace; padding:6px 12px; border-radius:20px; font-weight:600; }
+  .coverage-badge.ok{ background:rgba(18,183,106,0.1); color:var(--good); }
+  .coverage-badge.bad{ background:rgba(228,87,46,0.1); color:var(--bad); }
+
+  .btn{
+    background:var(--accent); color:#FFFFFF; border:none; padding:12px 18px; border-radius:10px;
+    font-family:'Poppins',sans-serif; font-weight:700; font-size:15px; cursor:pointer;
+  }
+  .btn:hover{ filter:brightness(1.06); }
+  .btn-secondary{ background:transparent; border:1.5px dashed var(--line); color:var(--muted); }
+  .btn-outline{ background:#FFFFFF; border:1.5px solid var(--line); color:var(--text); }
+  .btn:focus-visible{ outline:2px solid var(--text); outline-offset:2px; }
+
+  #statusMsg{ font-size:13px; margin-top:10px; padding:10px 12px; border-radius:8px; display:none; }
+  #statusMsg.show{ display:block; }
+  #statusMsg.warn{ background:rgba(228,87,46,0.08); color:var(--bad); border:1px solid rgba(228,87,46,.25); }
+  #statusMsg.ok{ background:rgba(18,183,106,0.08); color:var(--good); border:1px solid rgba(18,183,106,.25); }
+
+  .roster-scroll{ overflow-x:auto; }
+  table.roster{ border-collapse:collapse; width:100%; font-size:12px; }
+  table.roster th, table.roster td{ border:1px solid var(--line); padding:6px 7px; text-align:center; white-space:nowrap; }
+  table.roster th{ background:var(--panel); font-family:'IBM Plex Mono',monospace; font-weight:600; color:var(--muted); font-size:11px; position:sticky; top:0; z-index:1; }
+  table.roster th.name-col, table.roster td.name-col{ position:sticky; left:0; background:#FFFFFF; text-align:left; font-family:'Inter',sans-serif; font-weight:600; z-index:2; min-width:130px; }
+  table.roster td.shift-cell{ cursor:pointer; font-family:'IBM Plex Mono',monospace; font-weight:700; font-size:12px; user-select:none; }
+  table.roster td.sum-col{ font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--muted); background:#FAFBFF; }
+  table.roster th.sum-col{ background:#FAFBFF; }
+  .level-badge{ display:inline-block; font-size:10px; font-family:'IBM Plex Mono',monospace; background:var(--off); color:var(--muted); padding:1px 6px; border-radius:8px; margin-left:6px; }
+
+  td.cell-D{ background:rgba(255,176,32,0.22); color:#8A5700; }
+  td.cell-N{ background:rgba(108,92,231,0.20); color:#3F35A8; }
+  td.cell-cha{ background:rgba(45,190,143,0.20); color:#0F6B4E; }
+  td.cell-bor{ background:rgba(62,146,204,0.20); color:#1B577E; }
+  td.cell-duk{ background:rgba(194,68,122,0.18); color:#8A2E56; }
+  td.cell-off{ background:var(--off); color:var(--muted); }
+
+  .legend{ display:flex; gap:14px; flex-wrap:wrap; margin-top:10px; font-size:12px; color:var(--muted); }
+  .legend span{ display:inline-flex; align-items:center; gap:6px; }
+  .legend .dot{ width:10px; height:10px; border-radius:3px; display:inline-block; }
+
+  .shortfall-list{ margin-top:10px; }
+  .shortfall-item{ font-size:13px; color:var(--bad); padding:4px 0; }
+
+  .export-row{ display:flex; gap:10px; flex-wrap:wrap; margin-top:14px; }
+
+  @media print{
+    body{ padding:0; background:#fff; }
+    .no-print{ display:none !important; }
+    .panel{ box-shadow:none; border:none; padding:0; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">Shift Roster Planner</p>
+    <h1>จัดตารางเวร</h1>
+    <p class="subtitle">กรอกพนักงาน เลเวล และเงื่อนไขเวร ระบบจะจัดตารางให้อัตโนมัติ — ปรับแก้เองได้ก่อน export</p>
+  </header>
+
+  <div class="panel no-print">
+    <p class="panel-title">🗓️ ช่วงวันที่</p>
+    <div class="date-grid">
+      <div><label for="startDate">วันที่เริ่ม</label><input type="date" id="startDate"></div>
+      <div><label for="endDate">วันที่สิ้นสุด</label><input type="date" id="endDate"></div>
+    </div>
+    <p class="panel-hint">จัดได้ทุกวันไม่มีวันหยุด/ปิดทำการ — ระบบจะจัดเวรให้ครบทุกวันในช่วงที่เลือก</p>
+  </div>
+
+  <div class="panel no-print">
+    <p class="panel-title">🔀 ประเภทการจัดเวร</p>
+    <select id="scheduleMode">
+      <option value="mixed">ผสมทั้งสองแบบ (D/N และ ช/บ/ด ในวันเดียวกันได้)</option>
+      <option value="DN">เฉพาะ D / N (เวร 12 ชม.)</option>
+      <option value="CBD">เฉพาะ ช / บ / ด (เวร 8 ชม.)</option>
+    </select>
+  </div>
+
+  <div class="panel no-print">
+    <p class="panel-title">👥 รายชื่อพนักงาน + เลเวล</p>
+    <div id="staffList"></div>
+    <button class="btn btn-secondary" id="addStaffBtn" style="width:100%; margin-top:4px;">+ เพิ่มพนักงาน</button>
+    <p class="panel-hint">เลเวล 1-4 ใช้สำหรับกติกาคละระดับในแต่ละเวร (ห้ามเลเวล 1 ล้วนขึ้นด้วยกัน) — วันที่ไม่สะดวกกรอกเป็นเลขวันที่ คั่นด้วยจุลภาค เช่น 5,12,20</p>
+  </div>
+
+  <div class="panel no-print">
+    <p class="panel-title">🕐 จำนวนคนที่ต้องการต่อเวร (ต่อวัน)</p>
+    <div class="shift-req-grid">
+      <div class="shift-req-item"><label><span class="shift-dot" style="background:var(--d);"></span>D (7-19)</label><input type="number" id="reqD" min="0" value="4"></div>
+      <div class="shift-req-item"><label><span class="shift-dot" style="background:var(--n);"></span>N (19-7)</label><input type="number" id="reqN" min="0" value="3"></div>
+      <div class="shift-req-item"><label><span class="shift-dot" style="background:var(--cha);"></span>ช (7-15)</label><input type="number" id="reqCha" min="0" value="0"></div>
+      <div class="shift-req-item"><label><span class="shift-dot" style="background:var(--bor);"></span>บ (15-23)</label><input type="number" id="reqBor" min="0" value="0"></div>
+      <div class="shift-req-item"><label><span class="shift-dot" style="background:var(--duk);"></span>ด (23-7)</label><input type="number" id="reqDuk" min="0" value="0"></div>
+    </div>
+    <p class="panel-hint">ระบบจะพยายามจัดให้ครบตามจำนวนที่กรอกในแต่ละเวรทุกวัน — ถ้าวันไหนคนไม่พอจริงๆ จะจัดเท่าที่ทำได้และแจ้งเตือนไว้ให้ตรวจสอบ</p>
+  </div>
+
+  <div class="panel no-print">
+    <p class="panel-title">⚙️ กติกาที่ระบบบังคับใช้อัตโนมัติ</p>
+    <ul style="font-size:13px; color:var(--muted); margin:0; padding-left:18px; line-height:1.9;">
+      <li>เวร D ติดกันได้ไม่เกิน <b>3 วัน</b> · เวร N ติดกันได้ไม่เกิน <b>3 วัน</b></li>
+      <li>ทำงานติดกัน (รวมทุกเวร D/N/ช/บ/ด) ได้ไม่เกิน <b>5 วัน</b> ก่อนต้องมีวันหยุด</li>
+      <li>ใครขึ้นเวร <b>ด หรือ N</b> วันก่อนหน้า จะไม่ถูกจัดเวร <b>D หรือ ช</b> ในวันถัดไป (ต้องได้พัก)</li>
+      <li>แต่ละเวรจะคละเลเวลกัน ไม่ให้เลเวล 1 ล้วนขึ้นด้วยกัน (ถ้ามีคนเลเวลอื่นว่างพอ)</li>
+      <li>กระจายจำนวนเวรให้ใกล้เคียงกันในแต่ละคนเท่าที่เงื่อนไขอื่นเอื้ออำนวย</li>
+    </ul>
+  </div>
+
+  <button class="btn no-print" id="generateBtn" style="width:100%; font-size:17px; padding:14px;">✨ จัดตารางเวรให้อัตโนมัติ</button>
+  <div id="statusMsg" class="no-print"></div>
+
+  <div class="panel" id="resultPanel" style="display:none; margin-top:18px;">
+    <p class="panel-title">📋 ตารางเวรที่ได้</p>
+    <div class="roster-scroll">
+      <table class="roster" id="rosterTable"></table>
+    </div>
+    <div class="legend">
+      <span><span class="dot" style="background:var(--d);"></span>D (7-19)</span>
+      <span><span class="dot" style="background:var(--n);"></span>N (19-7)</span>
+      <span><span class="dot" style="background:var(--cha);"></span>ช (7-15)</span>
+      <span><span class="dot" style="background:var(--bor);"></span>บ (15-23)</span>
+      <span><span class="dot" style="background:var(--duk);"></span>ด (23-7)</span>
+      <span><span class="dot" style="background:var(--off);"></span>off</span>
+    </div>
+    <p class="panel-hint no-print">💡 คลิกที่ช่องในตารางเพื่อสลับเวรเอง (วนตามลำดับ D → N → ช → บ → ด → off)</p>
+    <div id="shortfallList" class="shortfall-list no-print"></div>
+    <div class="export-row no-print">
+      <button class="btn btn-outline" id="exportExcelBtn">📊 Export เป็น Excel</button>
+      <button class="btn btn-outline" id="printBtn">🖨️ พิมพ์ / บันทึกเป็น PDF</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+let staffCounter = 0;
+let schedule = {};
+let dateList = [];
+let staffData = [];
+let lastCriticalDates = {}; // {name, level}
+
+const SHIFT_TYPES = ['D','N','cha','bor','duk'];
+const shiftLabels = { D:'D', N:'N', cha:'ช', bor:'บ', duk:'ด', off:'off' };
+const shiftCycle = ['D','N','cha','bor','duk','off'];
+const dayBucketShifts = ['D','cha','bor'];
+const nightBucketShifts = ['N','duk','bor'];
+
+function addStaffRow(name = '', level = '1'){
+  staffCounter++;
+  const id = 'staff-' + staffCounter;
+  const row = document.createElement('div');
+  row.className = 'staff-row';
+  row.dataset.id = id;
+  row.innerHTML = `
+    <div><label>ชื่อพนักงาน</label><input type="text" class="s-name" placeholder="เช่น สมชาย ใจดี" value="${name}"></div>
+    <div><label>เลเวล</label><select class="s-level">
+      <option value="1" ${level==='1'?'selected':''}>1</option>
+      <option value="2" ${level==='2'?'selected':''}>2</option>
+      <option value="3" ${level==='3'?'selected':''}>3</option>
+      <option value="4" ${level==='4'?'selected':''}>4</option>
+    </select></div>
+    <div><label>วันที่ไม่สะดวก</label><input type="text" class="s-off" placeholder="เช่น 5,12,20"></div>
+    <button type="button" class="remove-staff" aria-label="ลบ">✕</button>
+  `;
+  row.querySelector('.remove-staff').addEventListener('click', () => row.remove());
+  document.getElementById('staffList').appendChild(row);
+}
+
+document.getElementById('addStaffBtn').addEventListener('click', () => addStaffRow());
+addStaffRow(); addStaffRow(); addStaffRow(); addStaffRow();
+
+(function initDates(){
+  const now = new Date();
+  const first = new Date(now.getFullYear(), now.getMonth(), 1);
+  const last = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  document.getElementById('startDate').value = first.toISOString().slice(0,10);
+  document.getElementById('endDate').value = last.toISOString().slice(0,10);
+})();
+
+function getDateRange(startStr, endStr){
+  const dates = [];
+  let cur = new Date(startStr + 'T00:00:00');
+  const end = new Date(endStr + 'T00:00:00');
+  while(cur <= end){
+    dates.push(cur.toISOString().slice(0,10));
+    cur.setDate(cur.getDate() + 1);
+  }
+  return dates;
+}
+function thaiWeekday(dateStr){
+  const days = ['อา','จ','อ','พ','พฤ','ศ','ส'];
+  return days[new Date(dateStr + 'T00:00:00').getDay()];
+}
+function showStatus(msg, type){
+  const el = document.getElementById('statusMsg');
+  el.textContent = msg; el.className = 'show ' + type;
+}
+
+/* ---- mode: enable/disable irrelevant shift inputs ---- */
+function applyMode(){
+  const mode = document.getElementById('scheduleMode').value;
+  const dInput = document.getElementById('reqD'), nInput = document.getElementById('reqN');
+  const chaInput = document.getElementById('reqCha'), borInput = document.getElementById('reqBor'), dukInput = document.getElementById('reqDuk');
+  [dInput,nInput,chaInput,borInput,dukInput].forEach(i => i.disabled = false);
+  if(mode === 'DN'){
+    chaInput.disabled = true; borInput.disabled = true; dukInput.disabled = true;
+    chaInput.value = 0; borInput.value = 0; dukInput.value = 0;
+  } else if(mode === 'CBD'){
+    dInput.disabled = true; nInput.disabled = true;
+    dInput.value = 0; nInput.value = 0;
+    if(parseInt(chaInput.value)===0 && parseInt(dukInput.value)===0){ chaInput.value=4; dukInput.value=3; }
+  }
+}
+document.getElementById('scheduleMode').addEventListener('change', applyMode);
+applyMode();
+
+function generateSchedule(){
+  const startStr = document.getElementById('startDate').value;
+  const endStr = document.getElementById('endDate').value;
+  if(!startStr || !endStr || startStr > endStr){ showStatus('กรุณาเลือกช่วงวันที่ให้ถูกต้อง', 'warn'); return; }
+
+  staffData = [...document.querySelectorAll('.staff-row')].map(row => ({
+    name: row.querySelector('.s-name').value.trim(),
+    level: parseInt(row.querySelector('.s-level').value),
+    offDays: (row.querySelector('.s-off').value.trim() ? row.querySelector('.s-off').value.trim().split(',').map(s=>parseInt(s.trim())).filter(n=>!isNaN(n)) : [])
+  })).filter(s => s.name);
+
+  if(staffData.length === 0){ showStatus('กรุณากรอกชื่อพนักงานอย่างน้อย 1 คน', 'warn'); return; }
+
+  const shiftReq = {
+    D: parseInt(document.getElementById('reqD').value)||0,
+    N: parseInt(document.getElementById('reqN').value)||0,
+    cha: parseInt(document.getElementById('reqCha').value)||0,
+    bor: parseInt(document.getElementById('reqBor').value)||0,
+    duk: parseInt(document.getElementById('reqDuk').value)||0
+  };
+
+  dateList = getDateRange(startStr, endStr);
+  const names = staffData.map(s => s.name);
+  const levelOf = {}; staffData.forEach(s => levelOf[s.name] = s.level);
+  const offSet = {}; staffData.forEach(s => offSet[s.name] = new Set(s.offDays));
+
+  const totalShifts = {}, perTypeCount = {}, streakD = {}, streakN = {}, streakAny = {};
+  names.forEach(n => {
+    totalShifts[n] = 0;
+    perTypeCount[n] = { D:0,N:0,cha:0,bor:0,duk:0 };
+    streakD[n]=0; streakN[n]=0; streakAny[n]=0;
+    schedule[n] = {};
+  });
+
+  let prevShift = {};
+  const shortfalls = [];
+  const criticalDates = {}; // dateStr -> array of shift labels with zero coverage
+
+  dateList.forEach(dateStr => {
+    const dayOfMonth = new Date(dateStr + 'T00:00:00').getDate();
+    const assignedToday = {};
+
+    SHIFT_TYPES.forEach(shiftType => {
+      const need = shiftReq[shiftType];
+      if(need <= 0) return;
+
+      let candidates = names.filter(n =>
+        !offSet[n].has(dayOfMonth) &&
+        !assignedToday[n] &&
+        streakAny[n] < 5 &&
+        !(shiftType === 'D' && streakD[n] >= 3) &&
+        !(shiftType === 'N' && streakN[n] >= 3) &&
+        !((prevShift[n] === 'N' || prevShift[n] === 'duk') && (shiftType === 'D' || shiftType === 'cha'))
+      );
+      candidates.sort((a,b) => {
+        if(perTypeCount[a][shiftType] !== perTypeCount[b][shiftType]) return perTypeCount[a][shiftType]-perTypeCount[b][shiftType];
+        return totalShifts[a]-totalShifts[b];
+      });
+
+      let picked = candidates.slice(0, need);
+
+      // level-mixing: avoid an all-level-1 group when an alternative exists
+      if(picked.length >= 2 && picked.every(n => levelOf[n] === 1)){
+        const altIdx = candidates.slice(need).findIndex(n => levelOf[n] !== 1);
+        if(altIdx !== -1){
+          picked[picked.length-1] = candidates[need + altIdx];
+        }
+      }
+
+      picked.forEach(n => {
+        assignedToday[n] = shiftType;
+        perTypeCount[n][shiftType]++;
+        totalShifts[n]++;
+      });
+      if(picked.length < need){
+        shortfalls.push(`${dateStr} (${thaiWeekday(dateStr)}) เวร${shiftLabels[shiftType]} ขาด ${need - picked.length} คน`);
+      }
+      if(picked.length === 0){
+        if(!criticalDates[dateStr]) criticalDates[dateStr] = [];
+        criticalDates[dateStr].push(shiftLabels[shiftType]);
+      }
+    });
+
+    names.forEach(n => {
+      const shift = assignedToday[n] || 'off';
+      schedule[n][dateStr] = shift;
+      if(shift === 'off'){ streakAny[n]=0; streakD[n]=0; streakN[n]=0; }
+      else {
+        streakAny[n]++;
+        streakD[n] = shift==='D' ? streakD[n]+1 : 0;
+        streakN[n] = shift==='N' ? streakN[n]+1 : 0;
+      }
+    });
+    prevShift = assignedToday;
+  });
+
+  renderRoster(names, levelOf, perTypeCount, totalShifts, criticalDates);
+  lastCriticalDates = criticalDates;
+  document.getElementById('resultPanel').style.display = 'block';
+
+  const shortfallEl = document.getElementById('shortfallList');
+  const criticalCount = Object.keys(criticalDates).length;
+  let msgParts = [];
+  if(criticalCount){
+    msgParts.push(`<p style="font-size:13px; color:#fff; background:var(--bad); display:inline-block; padding:5px 10px; border-radius:6px; font-weight:600; margin:0 0 8px;">🚨 พบ ${criticalCount} วันที่ไม่มีคนขึ้นเวรเลยในบางเวร (ดูช่องสีแดงในตาราง) — กรุณาพิจารณาปรับวันหยุดด้วยตนเอง</p>`);
+  }
+  if(shortfalls.length){
+    msgParts.push('<p style="font-size:13px; color:var(--bad); font-weight:600; margin:8px 0 4px;">⚠️ วันที่คนไม่ครบตามจำนวนที่ต้องการ:</p>' +
+      shortfalls.map(s => `<div class="shortfall-item">• ${s}</div>`).join(''));
+  }
+  shortfallEl.innerHTML = msgParts.join('');
+
+  if(criticalCount){
+    showStatus(`จัดตารางเสร็จแล้ว แต่มี ${criticalCount} วันที่ต้องพิจารณาปรับวันหยุดเอง (ไม่มีคนขึ้นเวรเลยในบางเวร)`, 'warn');
+  } else if(shortfalls.length){
+    showStatus(`จัดตารางเสร็จ แต่มี ${shortfalls.length} จุดที่คนไม่ครบ ดูรายละเอียดด้านล่างตาราง`, 'warn');
+  } else {
+    showStatus('จัดตารางเวรสำเร็จ ครบทุกเวรทุกวัน ✓', 'ok');
+  }
+  document.getElementById('resultPanel').scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+function renderRoster(names, levelOf, perTypeCount, totalShifts, criticalDates){
+  const table = document.getElementById('rosterTable');
+  let html = '<thead><tr><th class="name-col">พนักงาน</th>';
+  dateList.forEach(d => {
+    const day = new Date(d + 'T00:00:00').getDate();
+    const isCritical = criticalDates[d];
+    if(isCritical){
+      html += `<th style="background:var(--bad); color:#fff;" title="ไม่มีคนขึ้นเวร: ${isCritical.join(', ')}">🚨${day}<br>${thaiWeekday(d)}</th>`;
+    } else {
+      html += `<th>${day}<br>${thaiWeekday(d)}</th>`;
+    }
+  });
+  html += '<th class="sum-col">D</th><th class="sum-col">N</th><th class="sum-col">ช</th><th class="sum-col">บ</th><th class="sum-col">ด</th><th class="sum-col">หยุด</th><th class="sum-col">รวม</th></tr></thead><tbody>';
+
+  names.forEach(name => {
+    html += `<tr><td class="name-col">${name}<span class="level-badge">L${levelOf[name]}</span></td>`;
+    dateList.forEach(d => {
+      const val = schedule[name][d] || 'off';
+      const isCritical = criticalDates[d];
+      const criticalStyle = isCritical ? ' style="box-shadow: inset 0 0 0 2px var(--bad);"' : '';
+      html += `<td class="shift-cell cell-${val}" data-name="${name}" data-date="${d}"${criticalStyle}>${shiftLabels[val]}</td>`;
+    });
+    const c = perTypeCount[name];
+    const offCount = dateList.length - totalShifts[name];
+    html += `<td class="sum-col">${c.D}</td><td class="sum-col">${c.N}</td><td class="sum-col">${c.cha}</td><td class="sum-col">${c.bor}</td><td class="sum-col">${c.duk}</td><td class="sum-col">${offCount}</td><td class="sum-col"><b>${totalShifts[name]}</b></td>`;
+    html += '</tr>';
+  });
+  html += '</tbody>';
+  table.innerHTML = html;
+
+  table.querySelectorAll('.shift-cell').forEach(cell => {
+    cell.addEventListener('click', () => {
+      const name = cell.dataset.name, date = cell.dataset.date;
+      const current = schedule[name][date] || 'off';
+      const next = shiftCycle[(shiftCycle.indexOf(current) + 1) % shiftCycle.length];
+      schedule[name][date] = next;
+      cell.className = 'shift-cell cell-' + next;
+      cell.textContent = shiftLabels[next];
+      recomputeSummaryRow(name);
+    });
+  });
+}
+
+function recomputeSummaryRow(name){
+  const counts = { D:0,N:0,cha:0,bor:0,duk:0 };
+  dateList.forEach(d => { const v = schedule[name][d]; if(v && v !== 'off') counts[v]++; });
+  const total = counts.D+counts.N+counts.cha+counts.bor+counts.duk;
+  const offCount = dateList.length - total;
+  const rows = document.querySelectorAll('#rosterTable tbody tr');
+  rows.forEach(row => {
+    if(row.querySelector('.name-col').textContent.startsWith(name)){
+      const sumCells = row.querySelectorAll('.sum-col');
+      sumCells[0].textContent = counts.D;
+      sumCells[1].textContent = counts.N;
+      sumCells[2].textContent = counts.cha;
+      sumCells[3].textContent = counts.bor;
+      sumCells[4].textContent = counts.duk;
+      sumCells[5].textContent = offCount;
+      sumCells[6].innerHTML = `<b>${total}</b>`;
+    }
+  });
+}
+
+document.getElementById('generateBtn').addEventListener('click', generateSchedule);
+
+document.getElementById('exportExcelBtn').addEventListener('click', () => {
+  const names = staffData.map(s => s.name);
+  const aoa = [['พนักงาน','เลเวล', ...dateList.map(d => { const day = new Date(d+'T00:00:00').getDate(); const prefix = lastCriticalDates[d] ? '🚨' : ''; return `${prefix}${day}(${thaiWeekday(d)})`; }), 'D','N','ช','บ','ด','หยุด','รวม']];
+  names.forEach(name => {
+    const counts = { D:0,N:0,cha:0,bor:0,duk:0 };
+    dateList.forEach(d => { const v = schedule[name][d]; if(v && v!=='off') counts[v]++; });
+    const total = counts.D+counts.N+counts.cha+counts.bor+counts.duk;
+    const offCount = dateList.length - total;
+    aoa.push([name, staffData.find(s=>s.name===name).level, ...dateList.map(d => shiftLabels[schedule[name][d]||'off']), counts.D,counts.N,counts.cha,counts.bor,counts.duk,offCount,total]);
+  });
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'ตารางเวร');
+  XLSX.writeFile(wb, `ตารางเวร-${dateList[0]}-ถึง-${dateList[dateList.length-1]}.xlsx`);
+});
+
+document.getElementById('printBtn').addEventListener('click', () => window.print());
+</script>
+</body>
+</html>
