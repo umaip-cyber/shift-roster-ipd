@@ -174,6 +174,12 @@
       <li>แต่ละเวรจะคละเลเวลกัน ไม่ให้เลเวล 1 ล้วนขึ้นด้วยกัน (ถ้ามีคนเลเวลอื่นว่างพอ)</li>
       <li>กระจายจำนวนเวรให้ใกล้เคียงกันในแต่ละคนเท่าที่เงื่อนไขอื่นเอื้ออำนวย</li>
     </ul>
+    <div style="margin-top:14px; padding-top:14px; border-top:1px solid var(--line);">
+      <label style="display:flex; align-items:center; gap:8px; cursor:pointer; margin-bottom:0;">
+        <input type="checkbox" id="ruleNoLv1Lv2Night" style="width:auto;">
+        <span style="color:var(--text); font-size:13px;">ห้ามเลเวล 1 และเลเวล 2 ขึ้นเวรกลางคืน (N หรือ ด) ร่วมกัน — ตัวเลือกสำหรับแผนกที่เข้มงวดเรื่องนี้ (ปิดไว้เป็นค่าเริ่มต้น เพราะบางแผนกอนุญาต)</span>
+      </label>
+    </div>
   </div>
 
   <button class="btn no-print" id="generateBtn" style="width:100%; font-size:17px; padding:14px;">✨ จัดตารางเวรให้อัตโนมัติ</button>
@@ -201,6 +207,10 @@
   </div>
 
 </div>
+
+<footer style="text-align:center; padding:24px 0 8px; color:var(--muted); font-size:12px;">
+  จัดทำโดยแตงโม · ติดต่อ 1083
+</footer>
 
 <script>
 let staffCounter = 0;
@@ -304,6 +314,7 @@ function generateSchedule(){
     bor: parseInt(document.getElementById('reqBor').value)||0,
     duk: parseInt(document.getElementById('reqDuk').value)||0
   };
+  const noLv1Lv2Night = document.getElementById('ruleNoLv1Lv2Night').checked;
 
   dateList = getDateRange(startStr, endStr);
   const names = staffData.map(s => s.name);
@@ -350,6 +361,20 @@ function generateSchedule(){
         const altIdx = candidates.slice(need).findIndex(n => levelOf[n] !== 1);
         if(altIdx !== -1){
           picked[picked.length-1] = candidates[need + altIdx];
+        }
+      }
+
+      // optional department rule: level 1 and level 2 must not work night shifts (N/duk) together
+      if((shiftType === 'N' || shiftType === 'duk') && noLv1Lv2Night && picked.length >= 2){
+        const hasLv1 = picked.some(n => levelOf[n] === 1);
+        const hasLv2 = picked.some(n => levelOf[n] === 2);
+        if(hasLv1 && hasLv2){
+          for(let i = 0; i < picked.length; i++){
+            if(levelOf[picked[i]] === 2){
+              const altIdx = candidates.slice(need).findIndex(n => levelOf[n] !== 1 && levelOf[n] !== 2 && !picked.includes(n));
+              if(altIdx !== -1) picked[i] = candidates[need + altIdx];
+            }
+          }
         }
       }
 
