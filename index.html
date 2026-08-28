@@ -152,7 +152,7 @@
     <p class="panel-title">👥 รายชื่อพนักงาน + เลเวล</p>
     <div id="staffList"></div>
     <button class="btn btn-secondary" id="addStaffBtn" style="width:100%; margin-top:4px;">+ เพิ่มพนักงาน</button>
-    <p class="panel-hint">เลเวล 1-4 ใช้สำหรับกติกาคละระดับในแต่ละเวร (ห้ามเลเวล 1 ล้วนขึ้นด้วยกัน) — วันที่ไม่สะดวกกรอกเป็นเลขวันที่ คั่นด้วยจุลภาค เช่น 5,12,20 — ติ๊ก "ห้ามขึ้นเวรดึก" สำหรับพนักงานที่ตั้งครรภ์หรือไม่สบาย ระบบจะไม่จัดเวร N/ด ให้เด็ดขาด (แต่ยังจัดเวรอื่นให้ตามปกติ)</p>
+    <p class="panel-hint">เลเวล 1-4 ใช้สำหรับกติกาคละระดับในแต่ละเวร (ห้ามเลเวล 1 ล้วนขึ้นด้วยกัน) — วันที่ไม่สะดวกกรอกเป็นเลขวันที่ คั่นด้วยจุลภาค เช่น 5,12,20 — ติ๊ก "ห้ามขึ้นเวร N/บ/ด" สำหรับพนักงานที่ตั้งครรภ์หรือไม่สบาย ระบบจะไม่จัดเวร N, บ (15-23 น.) หรือ ด ให้เลย (แต่ยังจัดเวร D และ ช ให้ตามปกติ)</p>
   </div>
 
   <div class="panel no-print">
@@ -242,7 +242,7 @@ function addStaffRow(name = '', level = '1'){
       <option value="4" ${level==='4'?'selected':''}>4</option>
     </select></div>
     <div><label>วันที่ไม่สะดวก</label><input type="text" class="s-off" placeholder="เช่น 5,12,20"></div>
-    <div class="no-night-wrap"><label>ห้ามขึ้นเวรดึก<br>(ท้อง/ไม่สบาย)</label><input type="checkbox" class="s-no-night" style="width:auto; height:20px;"></div>
+    <div class="no-night-wrap"><label>ห้ามขึ้นเวร<br>N/บ/ด<br>(ท้อง/ไม่สบาย)</label><input type="checkbox" class="s-no-night" style="width:auto; height:20px;"></div>
     <button type="button" class="remove-staff" aria-label="ลบ">✕</button>
   `;
   row.querySelector('.remove-staff').addEventListener('click', () => row.remove());
@@ -352,7 +352,7 @@ function generateSchedule(){
         streakAny[n] < 5 &&
         !(shiftType === 'D' && streakD[n] >= 3) &&
         !(shiftType === 'N' && streakN[n] >= 3) &&
-        !((shiftType === 'N' || shiftType === 'duk') && noNightSet.has(n)) &&
+        !((shiftType === 'N' || shiftType === 'duk' || shiftType === 'bor') && noNightSet.has(n)) &&
         !((prevShift[n] === 'N' || prevShift[n] === 'duk') && (shiftType === 'D' || shiftType === 'cha'))
       );
       candidates.sort((a,b) => {
@@ -452,7 +452,7 @@ function renderRoster(names, levelOf, perTypeCount, totalShifts, criticalDates, 
   html += '<th class="sum-col">D</th><th class="sum-col">N</th><th class="sum-col">ช</th><th class="sum-col">บ</th><th class="sum-col">ด</th><th class="sum-col">หยุด</th><th class="sum-col">รวม</th></tr></thead><tbody>';
 
   names.forEach(name => {
-    html += `<tr><td class="name-col">${name}<span class="level-badge">L${levelOf[name]}</span>${noNightSet.has(name) ? '<span class="level-badge" style="background:rgba(228,87,46,0.12); color:var(--bad);" title="ห้ามขึ้นเวรดึก">⚕️</span>' : ''}</td>`;
+    html += `<tr><td class="name-col">${name}<span class="level-badge">L${levelOf[name]}</span>${noNightSet.has(name) ? '<span class="level-badge" style="background:rgba(228,87,46,0.12); color:var(--bad);" title="ห้ามขึ้นเวร N/บ/ด">⚕️</span>' : ''}</td>`;
     dateList.forEach(d => {
       const val = schedule[name][d] || 'off';
       const isCritical = criticalDates[d];
