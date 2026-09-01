@@ -411,6 +411,8 @@ function generateSchedule(){
     prevShift = assignedToday;
   });
 
+  const isolatedStats = fixIsolatedSingleWorkDays(names, offSet, levelOf, noNightSet, perTypeCount, totalShifts);
+
   renderRoster(names, levelOf, perTypeCount, totalShifts, criticalDates, noNightSet);
   lastCriticalDates = criticalDates;
   document.getElementById('resultPanel').style.display = 'block';
@@ -425,16 +427,64 @@ function generateSchedule(){
     msgParts.push('<p style="font-size:13px; color:var(--bad); font-weight:600; margin:8px 0 4px;">⚠️ วันที่คนไม่ครบตามจำนวนที่ต้องการ:</p>' +
       shortfalls.map(s => `<div class="shortfall-item">• ${s}</div>`).join(''));
   }
+  if(isolatedStats.remaining.length){
+    msgParts.push(`<p style="font-size:13px; color:var(--warn); font-weight:600; margin:8px 0 4px;">💡 พบ ${isolatedStats.remaining.length} จุดที่ทำงานวันเดียวโดดๆ แล้วหยุด (แก้ให้อัตโนมัติไม่ได้ในกรณีนี้ ไม่ผิดกติกา แต่ถ้าปรับได้จะดีกว่า):</p>` +
+      isolatedStats.remaining.map(s => `<div class="shortfall-item" style="color:var(--warn);">• ${s}</div>`).join(''));
+  }
   shortfallEl.innerHTML = msgParts.join('');
 
   if(criticalCount){
     showStatus(`จัดตารางเสร็จแล้ว แต่มี ${criticalCount} วันที่ต้องพิจารณาปรับวันหยุดเอง (ไม่มีคนขึ้นเวรเลยในบางเวร)`, 'warn');
   } else if(shortfalls.length){
     showStatus(`จัดตารางเสร็จ แต่มี ${shortfalls.length} จุดที่คนไม่ครบ ดูรายละเอียดด้านล่างตาราง`, 'warn');
+  } else if(isolatedStats.fixed.length || isolatedStats.remaining.length){
+    showStatus(`จัดตารางเวรสำเร็จ ครบทุกเวรทุกวัน ✓ (ปรับวันทำงานโดดๆ ให้อัตโนมัติแล้ว ${isolatedStats.fixed.length} จุด)`, 'ok');
   } else {
     showStatus('จัดตารางเวรสำเร็จ ครบทุกเวรทุกวัน ✓', 'ok');
   }
   document.getElementById('resultPanel').scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+/* ---------- soft constraint: avoid isolated single working days (off-work-off) ---------- */
+function fixIsolatedSingleWorkDays(names, offSet, levelOf, noNightSet, perTypeCount, totalShifts){
+  const fixed = [], remaining = [];
+
+  for(let i = 1; i < dateList.length - 1; i++){
+    const d = dateList[i], prevD = dateList[i-1], nextD = dateList[i+1];
+    const dayOfMonth = new Date(d + 'T00:00:00').getDate();
+
+    names.forEach(name => {
+      const cur = schedule[name][d];
+      const prev = schedule[name][prevD];
+      const next = schedule[name][nextD];
+      if(!(cur && cur !== 'off' && prev === 'off' && next === 'off')) return;
+
+      // try to find someone currently off that day to swap in, so `name` gets the day off instead
+      let swapped = false;
+      for(const y of names){
+        if(y === name) continue;
+        if(schedule[y][d] !== 'off') continue;
+        if(offSet[y].has(dayOfMonth)) continue;
+        if((cur === 'N' || cur === 'duk' || cur === 'bor') && noNightSet.has(y)) continue;
+
+        const yPrevShift = schedule[y][prevD];
+        if((yPrevShift === 'N' || yPrevShift === 'duk') && (cur === 'D' || cur === 'cha')) continue; // rest rule for y
+
+        // perform swap: name -> off, y -> takes the shift
+        schedule[name][d] = 'off';
+        schedule[y][d] = cur;
+        perTypeCount[name][cur]--; totalShifts[name]--;
+        perTypeCount[y][cur]++; totalShifts[y]++;
+        fixed.push(`${d} · ${name} → หยุด (สลับกับ ${y})`);
+        swapped = true;
+        break;
+      }
+      if(!swapped){
+        remaining.push(`${d} (${thaiWeekday(d)}) · ${name} ทำงานเวร ${shiftLabels[cur]} วันเดียวโดดๆ`);
+      }
+    });
+  }
+  return { fixed, remaining };
 }
 
 function renderRoster(names, levelOf, perTypeCount, totalShifts, criticalDates, noNightSet){
