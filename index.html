@@ -412,6 +412,7 @@ function generateSchedule(){
   });
 
   const isolatedStats = fixIsolatedSingleWorkDays(names, offSet, levelOf, noNightSet, perTypeCount, totalShifts);
+  const restViolations = verifyRestRule(names);
 
   renderRoster(names, levelOf, perTypeCount, totalShifts, criticalDates, noNightSet);
   lastCriticalDates = criticalDates;
@@ -431,6 +432,10 @@ function generateSchedule(){
     msgParts.push(`<p style="font-size:13px; color:var(--warn); font-weight:600; margin:8px 0 4px;">💡 พบ ${isolatedStats.remaining.length} จุดที่ทำงานวันเดียวโดดๆ แล้วหยุด (แก้ให้อัตโนมัติไม่ได้ในกรณีนี้ ไม่ผิดกติกา แต่ถ้าปรับได้จะดีกว่า):</p>` +
       isolatedStats.remaining.map(s => `<div class="shortfall-item" style="color:var(--warn);">• ${s}</div>`).join(''));
   }
+  if(restViolations.length){
+    msgParts.unshift(`<p style="font-size:13px; color:#fff; background:var(--bad); display:inline-block; padding:5px 10px; border-radius:6px; font-weight:600; margin:0 0 8px;">🚨 ตรวจพบการละเมิดกติกาพักผ่อน (N/ด ต่อด้วย D/ช) ${restViolations.length} จุด — กรุณาแก้ไขด้วยมือ:</p>` +
+      restViolations.map(s => `<div class="shortfall-item">• ${s}</div>`).join(''));
+  }
   shortfallEl.innerHTML = msgParts.join('');
 
   if(criticalCount){
@@ -446,6 +451,37 @@ function generateSchedule(){
 }
 
 /* ---------- soft constraint: avoid isolated single working days (off-work-off) ---------- */
+function verifyRestRule(names){
+  const violations = [];
+  names.forEach(name => {
+    for(let i = 1; i < dateList.length; i++){
+      const prevShift = schedule[name][dateList[i-1]];
+      const curShift = schedule[name][dateList[i]];
+      if((prevShift === 'N' || prevShift === 'duk') && (curShift === 'D' || curShift === 'cha')){
+        violations.push(`${dateList[i]} · ${name}: ${shiftLabels[prevShift]} (วันก่อน) ต่อด้วย ${shiftLabels[curShift]} (วันนี้)`);
+      }
+    }
+  });
+  return violations;
+}
+
+function countConsecutiveBackward(name, idx, predicate){
+  let count = 0;
+  for(let j = idx - 1; j >= 0; j--){
+    const s = schedule[name][dateList[j]];
+    if(predicate(s)) count++; else break;
+  }
+  return count;
+}
+function countConsecutiveForward(name, idx, predicate){
+  let count = 0;
+  for(let j = idx + 1; j < dateList.length; j++){
+    const s = schedule[name][dateList[j]];
+    if(predicate(s)) count++; else break;
+  }
+  return count;
+}
+
 function fixIsolatedSingleWorkDays(names, offSet, levelOf, noNightSet, perTypeCount, totalShifts){
   const fixed = [], remaining = [];
 
@@ -467,8 +503,26 @@ function fixIsolatedSingleWorkDays(names, offSet, levelOf, noNightSet, perTypeCo
         if(offSet[y].has(dayOfMonth)) continue;
         if((cur === 'N' || cur === 'duk' || cur === 'bor') && noNightSet.has(y)) continue;
 
+        // rest rule, BOTH directions around y's day d
         const yPrevShift = schedule[y][prevD];
-        if((yPrevShift === 'N' || yPrevShift === 'duk') && (cur === 'D' || cur === 'cha')) continue; // rest rule for y
+        const yNextShift = schedule[y][nextD];
+        if((yPrevShift === 'N' || yPrevShift === 'duk') && (cur === 'D' || cur === 'cha')) continue; // y needs rest before today
+        if((cur === 'N' || cur === 'duk') && (yNextShift === 'D' || yNextShift === 'cha')) continue; // y would need rest before tomorrow's shift
+
+        // streak limits for y if they take `cur` on day d (check both backward and forward runs)
+        const anyBack = countConsecutiveBackward(y, i, s => s && s !== 'off');
+        const anyFwd = countConsecutiveForward(y, i, s => s && s !== 'off');
+        if(anyBack + 1 + anyFwd > 5) continue;
+        if(cur === 'D'){
+          const dBack = countConsecutiveBackward(y, i, s => s === 'D');
+          const dFwd = countConsecutiveForward(y, i, s => s === 'D');
+          if(dBack + 1 + dFwd > 3) continue;
+        }
+        if(cur === 'N'){
+          const nBack = countConsecutiveBackward(y, i, s => s === 'N');
+          const nFwd = countConsecutiveForward(y, i, s => s === 'N');
+          if(nBack + 1 + nFwd > 3) continue;
+        }
 
         // perform swap: name -> off, y -> takes the shift
         schedule[name][d] = 'off';
