@@ -124,11 +124,28 @@
 
   .export-row{ display:flex; gap:10px; flex-wrap:wrap; margin-top:14px; }
 
+  /* ---- print: แนวนอน + ย่อตารางให้พอดีหน้ากระดาษ ---- */
+  @page{ size:A4 landscape; margin:7mm; }
   @media print{
-    body{ padding:0; background:#fff; }
+    *{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    body{ padding:0; background:#fff; min-height:0; }
+    .wrap{ max-width:none; }
+    header{ margin-bottom:6px; }
+    h1{ font-size:18px; }
+    .subtitle, .eyebrow, footer{ display:none; }
     .no-print{ display:none !important; }
-    .panel{ box-shadow:none; border:none; padding:0; }
-    table.roster tfoot td.total-short, table.roster tfoot td.total-over{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    .panel{ box-shadow:none; border:none; padding:0; margin:0; }
+    .panel-title{ margin:0 0 4px; font-size:13px; }
+    .roster-scroll{ overflow:visible !important; }
+    table.roster{ width:100%; font-size:7.5px; }
+    table.roster th, table.roster td{ padding:2px 1px; font-size:7.5px; }
+    table.roster th, table.roster th.name-col, table.roster td.name-col{ position:static; }
+    table.roster th.name-col, table.roster td.name-col{ min-width:0; padding:2px 3px; }
+    table.roster td.shift-cell, table.roster td.sum-col, table.roster tfoot td{ font-size:7.5px; }
+    .level-badge{ font-size:6.5px; padding:0 3px; margin-left:3px; }
+    table.roster tr{ page-break-inside:avoid; break-inside:avoid; }
+    .legend{ font-size:9px; margin-top:4px; }
+    .panel-hint{ font-size:9px; margin-top:3px; }
   }
 </style>
 </head>
@@ -270,16 +287,21 @@ addStaffRow(); addStaffRow(); addStaffRow(); addStaffRow();
   const now = new Date();
   const first = new Date(now.getFullYear(), now.getMonth(), 1);
   const last = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-  document.getElementById('startDate').value = first.toISOString().slice(0,10);
-  document.getElementById('endDate').value = last.toISOString().slice(0,10);
+  document.getElementById('startDate').value = toLocalDateStr(first);
+  document.getElementById('endDate').value = toLocalDateStr(last);
 })();
 
+// แปลงวันที่เป็น YYYY-MM-DD ตามเวลาเครื่อง (ไม่ใช้เวลา UTC ซึ่งทำให้วันที่เลื่อนไป 1 วันในเวลาไทย)
+function toLocalDateStr(dt){
+  const y = dt.getFullYear(), m = String(dt.getMonth()+1).padStart(2,'0'), d = String(dt.getDate()).padStart(2,'0');
+  return `${y}-${m}-${d}`;
+}
 function getDateRange(startStr, endStr){
   const dates = [];
   let cur = new Date(startStr + 'T00:00:00');
   const end = new Date(endStr + 'T00:00:00');
   while(cur <= end){
-    dates.push(cur.toISOString().slice(0,10));
+    dates.push(toLocalDateStr(cur));
     cur.setDate(cur.getDate() + 1);
   }
   return dates;
