@@ -23,6 +23,7 @@
     --accent:#FF6B5B;
     --good:#12B76A;
     --bad:#E4572E;
+    --warn:#D98200;
     --radius:12px;
   }
   @media (prefers-reduced-motion: reduce){ *{ animation-duration:.001ms !important; transition-duration:.001ms !important; } }
@@ -105,6 +106,15 @@
   td.cell-duk{ background:rgba(194,68,122,0.18); color:#8A2E56; }
   td.cell-off{ background:var(--off); color:var(--muted); }
 
+  /* ---- daily totals (แถวสรุปเวรต่อวัน) ---- */
+  table.roster tfoot td{ background:#FAFBFF; font-family:'IBM Plex Mono',monospace; font-weight:600; font-size:12px; }
+  table.roster tfoot td.name-col{ background:#FAFBFF; font-size:12px; }
+  table.roster tfoot tr.first-total td{ border-top:2px solid var(--muted); }
+  table.roster tfoot tr.grand-total td{ border-top:1.5px solid var(--line); color:var(--text); font-weight:700; }
+  table.roster tfoot td.total-short{ background:rgba(228,87,46,0.16); color:var(--bad); font-weight:700; }
+  table.roster tfoot td.total-over{ background:rgba(217,130,0,0.14); color:var(--warn); }
+  table.roster tfoot .total-dot{ width:8px; height:8px; border-radius:2px; display:inline-block; margin-right:6px; vertical-align:middle; }
+
   .legend{ display:flex; gap:14px; flex-wrap:wrap; margin-top:10px; font-size:12px; color:var(--muted); }
   .legend span{ display:inline-flex; align-items:center; gap:6px; }
   .legend .dot{ width:10px; height:10px; border-radius:3px; display:inline-block; }
@@ -118,6 +128,7 @@
     body{ padding:0; background:#fff; }
     .no-print{ display:none !important; }
     .panel{ box-shadow:none; border:none; padding:0; }
+    table.roster tfoot td.total-short, table.roster tfoot td.total-over{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
   }
 </style>
 </head>
@@ -200,7 +211,8 @@
       <span><span class="dot" style="background:var(--duk);"></span>ด (23-7)</span>
       <span><span class="dot" style="background:var(--off);"></span>off</span>
     </div>
-    <p class="panel-hint no-print">💡 คลิกที่ช่องในตารางเพื่อสลับเวรเอง (วนตามลำดับ D → N → ช → บ → ด → off)</p>
+    <p class="panel-hint">📊 แถว "รวมเวร" ใต้ตาราง = จำนวนคนในแต่ละเวรของวันนั้น · <span style="color:var(--bad); font-weight:600;">สีแดง = คนขาด</span> · <span style="color:var(--warn); font-weight:600;">สีส้ม = คนเกิน</span> (เทียบกับจำนวนที่ต้องการ)</p>
+    <p class="panel-hint no-print">💡 คลิกที่ช่องในตารางเพื่อสลับเวรเอง (วนตามลำดับ D → N → ช → บ → ด → off) — แถวสรุปด้านล่างจะอัปเดตตามทันที</p>
     <div id="shortfallList" class="shortfall-list no-print"></div>
     <div class="export-row no-print">
       <button class="btn btn-outline" id="exportExcelBtn">📊 Export เป็น Excel</button>
@@ -220,9 +232,11 @@ let schedule = {};
 let dateList = [];
 let staffData = [];
 let lastCriticalDates = {}; // {name, level}
+let lastShiftReq = {};      // จำนวนคนที่ต้องการต่อเวร (ใช้เทียบในแถวสรุปต่อวัน)
 
 const SHIFT_TYPES = ['D','N','cha','bor','duk'];
 const shiftLabels = { D:'D', N:'N', cha:'ช', bor:'บ', duk:'ด', off:'off' };
+const shiftColorVar = { D:'--d', N:'--n', cha:'--cha', bor:'--bor', duk:'--duk' };
 const shiftCycle = ['D','N','cha','bor','duk','off'];
 const dayBucketShifts = ['D','cha','bor'];
 const nightBucketShifts = ['N','duk','bor'];
@@ -318,6 +332,7 @@ function generateSchedule(){
     bor: parseInt(document.getElementById('reqBor').value)||0,
     duk: parseInt(document.getElementById('reqDuk').value)||0
   };
+  lastShiftReq = shiftReq;
   const noLv1Lv2Night = document.getElementById('ruleNoLv1Lv2Night').checked;
 
   dateList = getDateRange(startStr, endStr);
@@ -326,6 +341,7 @@ function generateSchedule(){
   const offSet = {}; staffData.forEach(s => offSet[s.name] = new Set(s.offDays));
   const noNightSet = new Set(staffData.filter(s => s.noNight).map(s => s.name));
 
+  schedule = {};
   const totalShifts = {}, perTypeCount = {}, streakD = {}, streakN = {}, streakAny = {};
   names.forEach(n => {
     totalShifts[n] = 0;
@@ -541,6 +557,51 @@ function fixIsolatedSingleWorkDays(names, offSet, levelOf, noNightSet, perTypeCo
   return { fixed, remaining };
 }
 
+/* ---------- daily totals: จำนวนคนต่อเวรในแต่ละวัน ---------- */
+// แสดงเฉพาะเวรที่ "ต้องการ > 0" หรือ "มีคนถูกจัดอยู่จริง" (เช่น สลับเวรเองด้วยมือ)
+function getTotalRowTypes(){
+  return SHIFT_TYPES.filter(t =>
+    (lastShiftReq[t] || 0) > 0 ||
+    staffData.some(s => dateList.some(d => schedule[s.name][d] === t))
+  );
+}
+function countShiftOnDate(date, type){
+  return staffData.filter(s => schedule[s.name][date] === type).length;
+}
+function countWorkingOnDate(date){
+  return staffData.filter(s => { const v = schedule[s.name][date]; return v && v !== 'off'; }).length;
+}
+
+function renderDailyTotals(){
+  const tfoot = document.getElementById('dailyTotals');
+  if(!tfoot) return;
+  const types = getTotalRowTypes();
+  let html = '';
+
+  types.forEach((t, idx) => {
+    const req = lastShiftReq[t] || 0;
+    let rowSum = 0;
+    html += `<tr class="total-row${idx === 0 ? ' first-total' : ''}">`;
+    html += `<td class="name-col"><span class="total-dot" style="background:var(${shiftColorVar[t]});"></span>รวมเวร ${shiftLabels[t]}${req ? `<span class="level-badge">ต้องการ ${req}</span>` : ''}</td>`;
+    dateList.forEach(d => {
+      const c = countShiftOnDate(d, t);
+      rowSum += c;
+      let cls = 'total-cell', title = '';
+      if(req && c < req){ cls += ' total-short'; title = ` title="ขาด ${req - c} คน"`; }
+      else if(req && c > req){ cls += ' total-over'; title = ` title="เกิน ${c - req} คน"`; }
+      html += `<td class="${cls}"${title}>${c}</td>`;
+    });
+    html += `<td class="sum-col" colspan="7">รวม ${rowSum} เวร</td></tr>`;
+  });
+
+  // แถวรวมคนขึ้นเวรทั้งหมดของวันนั้น
+  html += `<tr class="total-row grand-total${types.length === 0 ? ' first-total' : ''}"><td class="name-col">รวมคนขึ้นเวร</td>`;
+  dateList.forEach(d => { html += `<td class="total-cell">${countWorkingOnDate(d)}</td>`; });
+  html += `<td class="sum-col" colspan="7"></td></tr>`;
+
+  tfoot.innerHTML = html;
+}
+
 function renderRoster(names, levelOf, perTypeCount, totalShifts, criticalDates, noNightSet){
   const table = document.getElementById('rosterTable');
   let html = '<thead><tr><th class="name-col">พนักงาน</th>';
@@ -556,7 +617,7 @@ function renderRoster(names, levelOf, perTypeCount, totalShifts, criticalDates, 
   html += '<th class="sum-col">D</th><th class="sum-col">N</th><th class="sum-col">ช</th><th class="sum-col">บ</th><th class="sum-col">ด</th><th class="sum-col">หยุด</th><th class="sum-col">รวม</th></tr></thead><tbody>';
 
   names.forEach(name => {
-    html += `<tr><td class="name-col">${name}<span class="level-badge">L${levelOf[name]}</span>${noNightSet.has(name) ? '<span class="level-badge" style="background:rgba(228,87,46,0.12); color:var(--bad);" title="ห้ามขึ้นเวร N/บ/ด">⚕️</span>' : ''}</td>`;
+    html += `<tr data-name="${name}"><td class="name-col">${name}<span class="level-badge">L${levelOf[name]}</span>${noNightSet.has(name) ? '<span class="level-badge" style="background:rgba(228,87,46,0.12); color:var(--bad);" title="ห้ามขึ้นเวร N/บ/ด">⚕️</span>' : ''}</td>`;
     dateList.forEach(d => {
       const val = schedule[name][d] || 'off';
       const isCritical = criticalDates[d];
@@ -568,8 +629,9 @@ function renderRoster(names, levelOf, perTypeCount, totalShifts, criticalDates, 
     html += `<td class="sum-col">${c.D}</td><td class="sum-col">${c.N}</td><td class="sum-col">${c.cha}</td><td class="sum-col">${c.bor}</td><td class="sum-col">${c.duk}</td><td class="sum-col">${offCount}</td><td class="sum-col"><b>${totalShifts[name]}</b></td>`;
     html += '</tr>';
   });
-  html += '</tbody>';
+  html += '</tbody><tfoot id="dailyTotals"></tfoot>';
   table.innerHTML = html;
+  renderDailyTotals();
 
   table.querySelectorAll('.shift-cell').forEach(cell => {
     cell.addEventListener('click', () => {
@@ -580,6 +642,7 @@ function renderRoster(names, levelOf, perTypeCount, totalShifts, criticalDates, 
       cell.className = 'shift-cell cell-' + next;
       cell.textContent = shiftLabels[next];
       recomputeSummaryRow(name);
+      renderDailyTotals();
     });
   });
 }
@@ -589,9 +652,8 @@ function recomputeSummaryRow(name){
   dateList.forEach(d => { const v = schedule[name][d]; if(v && v !== 'off') counts[v]++; });
   const total = counts.D+counts.N+counts.cha+counts.bor+counts.duk;
   const offCount = dateList.length - total;
-  const rows = document.querySelectorAll('#rosterTable tbody tr');
-  rows.forEach(row => {
-    if(row.querySelector('.name-col').textContent.startsWith(name)){
+  document.querySelectorAll('#rosterTable tbody tr').forEach(row => {
+    if(row.dataset.name === name){
       const sumCells = row.querySelectorAll('.sum-col');
       sumCells[0].textContent = counts.D;
       sumCells[1].textContent = counts.N;
@@ -616,6 +678,16 @@ document.getElementById('exportExcelBtn').addEventListener('click', () => {
     const offCount = dateList.length - total;
     aoa.push([name, staffData.find(s=>s.name===name).level, ...dateList.map(d => shiftLabels[schedule[name][d]||'off']), counts.D,counts.N,counts.cha,counts.bor,counts.duk,offCount,total]);
   });
+
+  // แถวสรุปจำนวนคนต่อเวรในแต่ละวัน
+  aoa.push([]);
+  getTotalRowTypes().forEach(t => {
+    const req = lastShiftReq[t] || 0;
+    const perDay = dateList.map(d => countShiftOnDate(d, t));
+    aoa.push([`รวมเวร ${shiftLabels[t]}`, req ? `ต้องการ ${req}` : '', ...perDay, `รวม ${perDay.reduce((a,b)=>a+b,0)}`]);
+  });
+  aoa.push(['รวมคนขึ้นเวร', '', ...dateList.map(d => countWorkingOnDate(d))]);
+
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'ตารางเวร');
