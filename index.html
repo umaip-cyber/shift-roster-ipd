@@ -4,7 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>จัดตารางเวร — Shift Roster Planner</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- xlsx-js-style: เวอร์ชันของ SheetJS ที่ใส่สีและเส้นตารางใน Excel ได้ -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600;700&display=swap');
 
@@ -690,6 +691,83 @@ function recomputeSummaryRow(name){
 
 document.getElementById('generateBtn').addEventListener('click', generateSchedule);
 
+/* ---------- สีใน Excel (ให้เหมือนตารางบนหน้าจอ) ---------- */
+const XL_SHIFT_COLORS = {
+  'D':   { fill:'FFEECE', font:'8A5700' },
+  'N':   { fill:'E2DEFA', font:'3F35A8' },
+  'ช':   { fill:'D5F2E9', font:'0F6B4E' },
+  'บ':   { fill:'D8E9F5', font:'1B577E' },
+  'ด':   { fill:'F4DDE7', font:'8A2E56' },
+  'off': { fill:'E4E9F5', font:'6B7A99' }
+};
+function xlStyle(fill, fontColor, opts = {}){
+  const thin = { style:'thin', color:{ rgb:'D5DCE8' } };
+  const s = {
+    font: { name:'Tahoma', sz:10, color:{ rgb:fontColor || '1C2541' }, bold:!!opts.bold },
+    alignment: { horizontal: opts.left ? 'left' : 'center', vertical:'center' },
+    border: { top:thin, bottom:thin, left:thin, right:thin }
+  };
+  if(fill) s.fill = { patternType:'solid', fgColor:{ rgb:fill } };
+  return s;
+}
+function applyExcelStyles(ws, staffCount){
+  const D = dateList.length;
+  const firstDateCol = 2, firstSumCol = 2 + D, lastCol = firstSumCol + 6;
+  const setStyle = (r, c, style) => {
+    const ref = XLSX.utils.encode_cell({ r, c });
+    if(!ws[ref]) ws[ref] = { t:'s', v:'' };
+    ws[ref].s = style;
+  };
+
+  // แถวหัวตาราง
+  for(let c = 0; c <= lastCol; c++){
+    const d = dateList[c - firstDateCol];
+    const critical = c >= firstDateCol && c < firstSumCol && lastCriticalDates[d];
+    setStyle(0, c, critical ? xlStyle('E4572E', 'FFFFFF', { bold:true }) : xlStyle('EEF2F8', '1C2541', { bold:true, left: c === 0 }));
+  }
+
+  // แถวพนักงาน
+  for(let r = 1; r <= staffCount; r++){
+    setStyle(r, 0, xlStyle('FFFFFF', '1C2541', { bold:true, left:true }));
+    setStyle(r, 1, xlStyle('FFFFFF', '6B7A99'));
+    for(let c = firstDateCol; c < firstSumCol; c++){
+      const ref = XLSX.utils.encode_cell({ r, c });
+      const color = XL_SHIFT_COLORS[ws[ref] ? ws[ref].v : 'off'] || XL_SHIFT_COLORS.off;
+      setStyle(r, c, xlStyle(color.fill, color.font, { bold:true }));
+    }
+    for(let c = firstSumCol; c <= lastCol; c++){
+      setStyle(r, c, xlStyle('FAFBFF', '6B7A99', { bold: c === lastCol }));
+    }
+  }
+
+  // แถวสรุปจำนวนคนต่อเวร (เริ่มหลังแถวว่าง)
+  const types = getTotalRowTypes();
+  types.forEach((t, i) => {
+    const r = staffCount + 2 + i;
+    const req = lastShiftReq[t] || 0;
+    const color = XL_SHIFT_COLORS[shiftLabels[t]];
+    setStyle(r, 0, xlStyle(color.fill, color.font, { bold:true, left:true }));
+    setStyle(r, 1, xlStyle('FAFBFF', '6B7A99'));
+    dateList.forEach((d, j) => {
+      const count = countShiftOnDate(d, t);
+      let style = xlStyle('FAFBFF', '1C2541', { bold:true });
+      if(req && count < req) style = xlStyle('FADBD2', 'E4572E', { bold:true });       // คนขาด = แดง
+      else if(req && count > req) style = xlStyle('F8E6C8', 'D98200', { bold:true });  // คนเกิน = ส้ม
+      setStyle(r, firstDateCol + j, style);
+    });
+    setStyle(r, firstSumCol, xlStyle('FAFBFF', '6B7A99'));
+  });
+  const grandRow = staffCount + 2 + types.length;
+  setStyle(grandRow, 0, xlStyle('EEF2F8', '1C2541', { bold:true, left:true }));
+  setStyle(grandRow, 1, xlStyle('EEF2F8', '1C2541'));
+  for(let c = firstDateCol; c < firstSumCol; c++) setStyle(grandRow, c, xlStyle('EEF2F8', '1C2541', { bold:true }));
+
+  // ความกว้างคอลัมน์ ความสูงแถว และขอบเขตชีต
+  ws['!cols'] = [{ wch:20 }, { wch:7 }, ...dateList.map(() => ({ wch:7 })), ...Array(7).fill({ wch:6 })];
+  ws['!rows'] = [{ hpt:30 }];
+  ws['!ref'] = XLSX.utils.encode_range({ s:{ r:0, c:0 }, e:{ r:grandRow, c:lastCol } });
+}
+
 document.getElementById('exportExcelBtn').addEventListener('click', () => {
   const names = staffData.map(s => s.name);
   const aoa = [['พนักงาน','เลเวล', ...dateList.map(d => { const day = new Date(d+'T00:00:00').getDate(); const prefix = lastCriticalDates[d] ? '🚨' : ''; return `${prefix}${day}(${thaiWeekday(d)})`; }), 'D','N','ช','บ','ด','หยุด','รวม']];
@@ -711,6 +789,7 @@ document.getElementById('exportExcelBtn').addEventListener('click', () => {
   aoa.push(['รวมคนขึ้นเวร', '', ...dateList.map(d => countWorkingOnDate(d))]);
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
+  applyExcelStyles(ws, names.length);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'ตารางเวร');
   XLSX.writeFile(wb, `ตารางเวร-${dateList[0]}-ถึง-${dateList[dateList.length-1]}.xlsx`);
